@@ -1,5 +1,5 @@
 # Rewind
-Rewind is a Python script used for extracting models, both characters and geometry, from `Blinx: The Time Sweeper`.
+Rewind is a Python script used for extracting models, both characters and geometry, from `BLiNX: The Time Sweeper`. This branch aims to add support for BLiNX 2: Masters of Time & Space.
 
 ![Screenshot](images/image1.png)
 
@@ -10,10 +10,10 @@ Rewind is a Python script used for extracting models, both characters and geomet
  - Any copy of `Blinx: The Time Sweeper`
 
 ## Notes
-`Blinx: The Time Sweeper` packs all its model data into the game's executable and most the addresses for this model data is not available as an easy to parse format, instead being referenced mostly in code. You can use something like [Ghidra](https://ghidra-sre.org/) and [ghidra-xbe](https://github.com/XboxDev/ghidra-xbe) to decompile the game and manually locate model data, or you can use `brute_force_extract.py` to search for model data and automatically extract it, see usage below.
+`BLiNX: The Time Sweeper` packs all its model data into the game's executable and most the addresses for this model data is not available as an easy to parse format, instead being referenced mostly in code. You can use something like [Ghidra](https://ghidra-sre.org/) and [ghidra-xbe](https://github.com/XboxDev/ghidra-xbe) to decompile the game and manually locate model data, or you can use `brute_force_extract.py` to search for model data and automatically extract it, see usage below.
 
 ## Usage
-Before anything is run, you'll need to obtain a copy of `Blinx: The Time Sweeper` and have the files extracted so you're able to access `default.xbe` and `media/`. You can use [extract-xiso](https://github.com/XboxDev/extract-xiso) to extract the game files if you've ripped or in other ways obtained the game as a xiso/iso file.
+Before anything is run, you'll need to obtain a copy of `BLiNX: The Time Sweeper` and have the files extracted so you're able to access `default.xbe` and `media/`. You can use [extract-xiso](https://github.com/XboxDev/extract-xiso) to extract the game files if you've ripped or in other ways obtained the game as a xiso/iso file.
 
 When you run `rewind.py` you'll need to supply the executable (`default.xbe`) and the texture directory (`media/`) along with the starting node's virtual address and texture string table virtual address. If you don't know how to find these addresses you can instead run `brute_force_extract.py` which will try and automatically find every starting node for the specified executable and extract them.
 
@@ -31,7 +31,7 @@ Mostly the same arguments as above except that we don't specify a node or string
 
 ## TODOs
  - [ ] Support outputting as OBJ files
- - [ ] Add support for `Blinx 2: Masters of Time and Space`, which has very similar data layout
+ - [ ] Add support for `BLiNX 2: Masters of Time and Space`, which has very similar data layout
 
 ## Thanks to
 Big thanks to bakerdonkey who created [pyBlinx](https://github.com/bakerdonkey/pyBlinx) and was hugely helpful back when I had lots of questions about this model format and all of the model data seemed very daunting.
