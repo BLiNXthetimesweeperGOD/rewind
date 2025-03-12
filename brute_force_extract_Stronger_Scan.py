@@ -20,9 +20,9 @@ def find_potential_root_nodes(xbr: XBEBinaryReader):
             float2 = xbr.read_f32(virtual_address + 0x24)
             float3 = xbr.read_f32(virtual_address + 0x28)
             if ((potential_node_type > 0x00 and potential_node_type < 0xff) and
-                frangecheck(float1, 0.99999, 1.00001) == True and
-                frangecheck(float2, 0.99999, 1.00001) == True and
-                frangecheck(float3, 0.99999, 1.00001) == True):
+                frangecheck(float1, 1.0, 5.0) == True and
+                frangecheck(float2, 1.0, 5.0) == True and
+                frangecheck(float3, 1.0, 5.0) == True):
 
                 referenced_node_virtual_addresses.append(xbr.read_i32(virtual_address + 0x2c))
                 referenced_node_virtual_addresses.append(xbr.read_i32(virtual_address + 0x30))

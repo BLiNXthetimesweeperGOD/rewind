@@ -125,6 +125,17 @@ bs_001d4e30 = [
     (0x00000000, 0x00000000),
 ]
 
+def getZeroTerminatedString(file, offset):
+    string = ""
+    scan = b''
+    with open(file, "rb") as fileWithString:
+        fileWithString.seek(offset)
+        while scan != b'\x00':
+            scan = fileWithString.read(1)
+            if scan != b'\x00':
+                string = string+scan.decode("UTF-8")
+    return string
+
 class UnrecognizedChunkIdentifierError(Exception):
     def __init__(self, chunk_ident, virtual_address):
         self.chunk_ident = chunk_ident
@@ -133,11 +144,13 @@ class UnrecognizedChunkIdentifierError(Exception):
 
 class XBE:
     class Section:
-        def __init__(self, vaddr, vsize, raddr, rsize):
+        def __init__(self, vaddr, vsize, raddr, rsize, name, range_):
             self.vaddr = vaddr
             self.vsize = vsize
             self.raddr = raddr
             self.rsize = rsize
+            self.name  = name
+            self.range = range_
 
     def __init__(self, f, sections: list[Section]):
         self.f = f
@@ -145,8 +158,25 @@ class XBE:
 
     @staticmethod
     def from_filepath(filepath):
+        global mode
+        global virtualaddressval
+        global stringtableentrysize
+        
         f = open(filepath, 'rb')
+        f.seek(0x148)
+        datecheck = f.read(4)
+        if datecheck == b'\x3C\x18\x76\x41':
+            mode = 1
+        else:
+            mode = 0
 
+        if mode == 1:
+            virtualaddressval = 8
+            stringtableentrysize = 0x24
+        else:
+            virtualaddressval = 0x10
+            stringtableentrysize = 0x20
+        
         f.seek(0x104)
         baseaddr = struct.unpack('i', f.read(4))[0]
         
@@ -165,7 +195,12 @@ class XBE:
             vsize = struct.unpack('i', f.read(4))[0]
             raddr = struct.unpack('i', f.read(4))[0]
             rsize = struct.unpack('i', f.read(4))[0]
-            sections.append(XBE.Section(vaddr, vsize, raddr, rsize))
+            sname = struct.unpack('i', f.read(4))[0]-baseaddr #Section name offset
+            range_= range(vaddr, vaddr+vsize)
+            
+            name = getZeroTerminatedString(filepath, sname)
+            
+            sections.append(XBE.Section(vaddr, vsize, raddr, rsize, name, range_))
 
         return XBE(f, sections)
 
@@ -381,7 +416,6 @@ class RewindContext:
     def __init__(self, xbe: XBE) -> None:
         self.xbe = xbe
         self.xbr = XBEBinaryReader(xbe)
-
         self.current_node_index = 0
         self.nodes: list[Node] = []
         self.textures: list[tuple[str, PIL.Image.Image]] = []
@@ -439,7 +473,7 @@ class RewindContext:
             num_vertices = self.xbr.read_u16(virtual_address + 0x06)
 
             # TODO: Differs in BLiNX 2; Add support for switching between the two.
-            virtual_address += 0x10
+            virtual_address += virtualaddressval
 
             for i in range(num_vertices):
                 position = self.xbr.read_v3f(virtual_address + 0x00)
@@ -734,7 +768,7 @@ class RewindContext:
         if vaddr_next > 0:
             self.parse_node(vaddr_next, parent)
 
-    def parse_texture_list(self, virtual_address: int | None, texture_dirname: str, len_string: int):
+    def parse_texture_list(self, virtual_address: int | None, texture_dirname: str):
         # If we've not supplied a virtual address to a string table, try and find matching string table by looking above
         # our lowest parsed virtual address in memory as the string table is often located above model data.
         if virtual_address == None:
@@ -747,7 +781,7 @@ class RewindContext:
                 
                 # If number of strings multiplied by string length brings us back to our potential string table virtual
                 # address, then we most likely have a valid string table.
-                if potential_num_strings > 0 and potential_vaddr_strings + (potential_num_strings * len_string) == potential_vaddr_st:
+                if potential_num_strings > 0 and potential_vaddr_strings + (potential_num_strings * stringtableentrysize) == potential_vaddr_st:
                     virtual_address = potential_vaddr_st
 
             if virtual_address == None:
@@ -760,11 +794,18 @@ class RewindContext:
             num_entries = self.xbr.read_u32(virtual_address + 0x04)
 
             for i in range(num_entries):
-                filename = self.xbr.read_bytes(vaddr_entries + i * len_string, len_string).decode('ascii').rstrip('\x00')
-                dds_filepath = os.path.join(texture_dirname, filename) + '.dds'
+                filename = self.xbr.read_bytes(vaddr_entries + i * stringtableentrysize, stringtableentrysize).decode('ascii').rstrip('\x00')
+                if "_xx" in filename and "_xxxx" not in filename:
+                    filename = filename.replace("_xx", "_01")
+                elif "_xxxx" in filename:
+                    filename = filename.replace("_xxxx", "_0001")
+                if filename.startswith("@"):
+                    dds_filepath = os.path.join(texture_dirname, filename) + '.tga'
+                else:
+                    dds_filepath = os.path.join(texture_dirname, filename) + '.dds'
                 try:
                     p_img = PIL.Image.open(dds_filepath)
-                except PIL.UnidentifiedImageError:
+                except:
                     print(f'Could not identify image format of DDS file ({dds_filepath}). You might need to apply this material manually, it will show as magenta colored.')
                     p_img = PIL.Image.new('RGB', (1, 1), (255, 0, 255))
 
@@ -1083,18 +1124,29 @@ def save_as_gltf(ctx: RewindContext, output_directory: str, format: Literal['glt
 
             if gfx_primitive.idx_node not in node_gltf_primitives:
                 node_gltf_primitives[gfx_primitive.idx_node] = []
-
-            node_gltf_primitives[gfx_primitive.idx_node].append(gltflib.Primitive(
-                mode = gltflib.PrimitiveMode.TRIANGLES.value,
-                material = idx_texture_to_gltf_material[gfx_strip.idx_texture],
-                indices = gltf_accessor_indices,
-                attributes = gltflib.Attributes(
-                    POSITION = gltf_accessor_position,
-                    NORMAL = gltf_accessor_normal,
-                    TEXCOORD_0 = gltf_accessor_texcoord if has_texture else None,
-                    COLOR_0 = gltf_accessor_color,
-                )
-            ))
+            try:
+                node_gltf_primitives[gfx_primitive.idx_node].append(gltflib.Primitive(
+                    mode = gltflib.PrimitiveMode.TRIANGLES.value,
+                    material = idx_texture_to_gltf_material[gfx_strip.idx_texture],
+                    indices = gltf_accessor_indices,
+                    attributes = gltflib.Attributes(
+                        POSITION = gltf_accessor_position,
+                        NORMAL = gltf_accessor_normal,
+                        TEXCOORD_0 = gltf_accessor_texcoord if has_texture else None,
+                        COLOR_0 = gltf_accessor_color,
+                    )
+                ))
+            except:
+                node_gltf_primitives[gfx_primitive.idx_node].append(gltflib.Primitive(
+                    mode = gltflib.PrimitiveMode.TRIANGLES.value,
+                    indices = gltf_accessor_indices,
+                    attributes = gltflib.Attributes(
+                        POSITION = gltf_accessor_position,
+                        NORMAL = gltf_accessor_normal,
+                        TEXCOORD_0 = gltf_accessor_texcoord if has_texture else None,
+                        COLOR_0 = gltf_accessor_color,
+                    )
+                ))
     
     if treat_as_character:
         gltf_all_primitives = []
@@ -1126,7 +1178,10 @@ def save_as_gltf(ctx: RewindContext, output_directory: str, format: Literal['glt
         output_filename = f'{output_basename}.{format}'
         uri = f'{output_basename}.bin'
     else:
-        output_filename = f'{ctx.root_node_virtual_address:#0{10}x}.{format}'
+        for section in ctx.xbe.sections:
+            if ctx.root_node_virtual_address in section.range:
+                xbesectionname = section.name
+        output_filename = f'{xbesectionname}_{ctx.root_node_virtual_address:#0{10}x}.{format}'
         uri = f'{ctx.root_node_virtual_address:#0{10}x}.bin'
 
     gltf_add_buffer(gltflib.Buffer(
@@ -1191,7 +1246,7 @@ if __name__ == '__main__':
     if args.st_vaddr == None:
         print(f'No virtual address provided for texture string table, will try finding matching string table...')
 
-    ctx.parse_texture_list(args.st_vaddr, args.texture_directory, 32)
+    ctx.parse_texture_list(args.st_vaddr, args.texture_directory)
 
     if args.format in ['gltf', 'glb']:
         save_as_gltf(ctx, args.output_directory, args.format, args.basename)
